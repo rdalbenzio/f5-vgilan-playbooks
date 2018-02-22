@@ -7,7 +7,8 @@
 
 
 - name: Removing traffic to the VNF Slice 
-  hosts: localhost
+  hosts: openstack
+  connection: local
 
   vars:
     inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
@@ -16,14 +17,12 @@
     - name: Getting VNF Management address
       os_server_facts:
         server: "{{ vnf }}"
-      delegate_to: localhost
       connection: local
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
 
     - name: Getting SLICE Management address
       os_server_facts:
         server: "{{ inst_name }}"
-      delegate_to: localhost
       connection: local
     - set_fact: slice_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
 
@@ -41,7 +40,6 @@
         name: "{{ inst_name }}"
         port: 0
         validate_certs: "false"
-      delegate_to: localhost
 
     - name: Remove vnf from dag-out pool
       bigip_pool_member:
@@ -55,7 +53,6 @@
         name: "{{ inst_name }}"
         port: 0
         validate_certs: "false"
-      delegate_to: localhost
 
     - name: Delete Big-IP Monitor
       uri:
@@ -71,7 +68,6 @@
         headers:
           Content-Type: "application/json"
         validate_certs: "false"
-      delegate_to: localhost
 
     - name: Delete Route pointing to pool member
       uri:
@@ -94,7 +90,8 @@
 #############################################################
 
 - name: Revoking License 
-  hosts: localhost
+  hosts: openstack
+  connection: local
   
   tasks: 
 
@@ -131,14 +128,14 @@
           address: "{{ slice_ip}}"
           user: "{{f5_user}}"
           password: "{{f5_password}}"
-      delegate_to: localhost
 
 ############################################################
 # Play 3 - Removing Slice From the Cluster
 #############################################################
 
 - name: Removing Slice From the Cluster 
-  hosts: localhost
+  hosts: openstack
+  connection: local
   
   tasks: 
 
@@ -155,7 +152,6 @@
         headers:
           Content-Type: "application/json"
         validate_certs: "false"
-      delegate_to: localhost
 
     - name: Remove SLICE From Trust Group 
       uri:
@@ -171,18 +167,17 @@
         body:
           deviceName: "{{ inst_name }}.{{ vnfdomain }}"
           command: run
-      delegate_to: localhost
 
 ############################################################
 # Play 4 - Delete Slice From Openstack
 #############################################################
 
 - name: Delete Slice From Openstack 
-  hosts: localhost
+  hosts: openstack
+  connection: local
   
   tasks: 
     - name: Delete from Openstack slice
       os_stack:
        state: absent
        name: "{{ inst_name }}"
-      delegate_to: localhost

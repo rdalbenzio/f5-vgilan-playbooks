@@ -5,7 +5,8 @@
 # Play 1 - Deploy BIGIP VE Slice Stack in Heat
 ##################################################
 - name: Deploy F5 BIGIP Slice instance
-  hosts: localhost
+  hosts: openstack
+  connection: local
 
   vars:
     inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
@@ -14,7 +15,6 @@
     - name: Getting VNF Management address
       os_server_facts:
         server: "{{ vnf }}"
-      delegate_to: localhost
       connection: local
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
     
@@ -28,7 +28,6 @@
        parameters:
         ve_name: "{{ inst_name }}"
         cluster_peer_address: "{{vnf_ip}}"
-      delegate_to: localhost
       register: bigipve
    
     - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][8]["output_value"] }}"
@@ -104,7 +103,8 @@
 
 
 - name: Adding traffic to the VNF Slice 
-  hosts: localhost
+  hosts: openstack
+  connection: local
 
   tasks:
     
@@ -118,7 +118,6 @@
         name: "{{ instance_name }}"
         host: "{{ vm_ip }}"
         validate_certs: "false"
-      delegate_to: localhost
 
 
     - name: Add vnf to scaleout pool member
@@ -133,7 +132,6 @@
         host: "{{ vm_ip }}"
         port: 0
         validate_certs: "false"
-      delegate_to: localhost
 
     - name: Adding Big-IP Monitor
       uri:
@@ -150,7 +148,6 @@
           name: "mon-{{ instance_name }}"
           partition: "dag-out"
           destination: "{{ return_ip }}:*"
-      delegate_to: localhost
 
     - name: Adding Pool member, Using uri as native module doesn't support monitors
       uri:
@@ -167,7 +164,6 @@
           name: "/dag-out/{{ instance_name }}:0"
           address: "{{ vm_ip }}"
           monitor: "mon-{{ instance_name }}"
-      delegate_to: localhost
 
     - name: Adding Route pointing to pool member
       uri:
@@ -185,7 +181,6 @@
           partition: dag-out
           gw: "{{return_ip}}"
           network: "{{ vm_ip }}/32"
-      delegate_to: localhost
 
     # - name: Adding Route pointing to pool member
     #   bigip_static_route:
