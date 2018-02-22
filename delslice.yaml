@@ -1,0 +1,188 @@
+#!/usr/bin/env ansible-playbook
+---
+
+############################################################
+# Play 1 - Removing VNF from Traffic
+#############################################################
+
+
+- name: Removing traffic to the VNF Slice 
+  hosts: localhost
+
+  vars:
+    inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
+
+  tasks:
+    - name: Getting VNF Management address
+      os_server_facts:
+        server: "{{ vnf }}"
+      delegate_to: localhost
+      connection: local
+    - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+
+    - name: Getting SLICE Management address
+      os_server_facts:
+        server: "{{ inst_name }}"
+      delegate_to: localhost
+      connection: local
+    - set_fact: slice_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+
+    - set_fact: inst_name={{ inst_name }}
+
+    - name: Remove vnf from scaleout pool
+      bigip_pool_member:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "absent"
+        preserve_node: no
+        pool: "vnf"
+        partition: "scaleout"
+        name: "{{ inst_name }}"
+        port: 0
+        validate_certs: "false"
+      delegate_to: localhost
+
+    - name: Remove vnf from dag-out pool
+      bigip_pool_member:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "absent"
+        preserve_node: no
+        pool: "vnf-out"
+        partition: "dag-out"
+        name: "{{ inst_name }}"
+        port: 0
+        validate_certs: "false"
+      delegate_to: localhost
+
+    - name: Delete Big-IP Monitor
+      uri:
+        method: DELETE
+        url: "https://{{ vnf_ip }}/mgmt//tm/ltm/monitor/gateway-icmp/~dag-out~mon-{{ inst_name }}"
+        return_content: yes
+        body_format: "json"
+        status_code: 200,404
+        body:
+          test: value
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+      delegate_to: localhost
+
+    - name: Delete Route pointing to pool member
+      uri:
+        method: DELETE
+        url: "https://{{ vnf_ip }}/mgmt/tm/net/route/~dag-out~{{ inst_name }}"
+        return_content: yes
+        body_format: "json"
+        status_code: 200,404
+        body:
+          test: value
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+      delegate_to: localhost
+
+############################################################
+# Play 2 - Revoking License
+#############################################################
+
+- name: Revoking License 
+  hosts: localhost
+  
+  tasks: 
+
+    - name: Get BIGIQ Auth Token
+      uri:
+        method: POST
+        url: "https://{{ bigiq_ip }}/mgmt/shared/authn/login"
+        return_content: yes
+        status_code: 200
+        body_format: "json"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          username: "admin"
+          password: "{{ bigiq_password }}"
+          loginProviderName: "local"
+      register: tokenpage
+
+    - name: Revoke SLICE license 
+      uri:
+        method: POST
+        url: "https://{{ bigiq_ip }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        return_content: yes
+        status_code: 202
+        body_format: "json"
+        headers:
+          Content-Type: "application/json"
+          X-F5-Auth-Token: "{{tokenpage.json.token.token}}"
+        validate_certs: "false"
+        body:
+          licensePoolName: "{{licensePoolName}}"
+          command: revoke
+          address: "{{ slice_ip}}"
+          user: "{{f5_user}}"
+          password: "{{f5_password}}"
+      delegate_to: localhost
+
+############################################################
+# Play 3 - Removing Slice From the Cluster
+#############################################################
+
+- name: Removing Slice From the Cluster 
+  hosts: localhost
+  
+  tasks: 
+
+    - name: Remove the Slice from the device group vnf 
+      uri:
+        method: DELETE
+        url: "https://{{ vnf_ip }}/mgmt/tm/cm/device-group/vnf/devices/{{ inst_name }}.{{ vnfdomain }}"
+        return_content: yes
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        body:
+          test: "value"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+      delegate_to: localhost
+
+    - name: Remove SLICE From Trust Group 
+      uri:
+        method: POST
+        url: "https://{{ vnf_ip }}/mgmt/tm/cm/remove-from-trust/"
+        return_content: yes
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          deviceName: "{{ inst_name }}.{{ vnfdomain }}"
+          command: run
+      delegate_to: localhost
+
+############################################################
+# Play 4 - Delete Slice From Openstack
+#############################################################
+
+- name: Delete Slice From Openstack 
+  hosts: localhost
+  
+  tasks: 
+    - name: Delete from Openstack slice
+      os_stack:
+       state: absent
+       name: "{{ inst_name }}"
+      delegate_to: localhost

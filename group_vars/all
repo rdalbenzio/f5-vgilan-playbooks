@@ -1,0 +1,23 @@
+
+openstack:
+  auth_url: http://10.102.123.11:35357/v2.0
+  username: admin
+  password: traffix
+  tenant_name: gilan
+  region_name: RegionOne
+
+vnfdomain: openstack.lab
+
+vnf: 
+  name: CTRLPLANE1
+  username: admin
+  password: admin
+
+
+f5_user: admin
+f5_password: admin
+
+bigiq_ip: 10.103.14.209
+bigiq_user: admin
+bigiq_password: f54dministrator
+licensePoolName: VNFPool

@@ -1,0 +1,198 @@
+#!/usr/bin/env ansible-playbook
+---
+
+##################################################
+# Play 1 - Deploy BIGIP VE Slice Stack in Heat
+##################################################
+- name: Deploy F5 BIGIP Slice instance
+  hosts: localhost
+
+  vars:
+    inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
+
+  tasks:
+    - name: Getting VNF Management address
+      os_server_facts:
+        server: "{{ vnf }}"
+      delegate_to: localhost
+      connection: local
+    - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+    
+    - name: Spinning up a new slice
+      os_stack:
+       state: present
+       name: "{{ inst_name }}"
+       template: "./files/openstack/f5_vnf.yaml"
+       environment:
+        - ./files/openstack/testHA.yaml
+       parameters:
+        ve_name: "{{ inst_name }}"
+        cluster_peer_address: "{{vnf_ip}}"
+      delegate_to: localhost
+      register: bigipve
+   
+    - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][8]["output_value"] }}"
+    - set_fact: vm_ip="{{ bigipve["stack"]["outputs"][22]["output_value"] }}"
+    - set_fact: return_ip="{{ bigipve["stack"]["outputs"][12]["output_value"] }}"
+    - set_fact: instance_name="{{ inst_name }}"
+
+    - name: Adding VM to deployed-ves
+      add_host:
+          name: "{{ mgmt_ip }}"
+          group: deployed-ve
+
+############################################################
+# Play 2 - Wait for BIGIP VE instance to fully boot up
+#############################################################
+- name: waiting for target before continue
+  hosts: deployed-ve
+  connection: local
+
+  tasks:
+    - name: waiting for {{ inventory_hostname }} to be reachable via ping
+      wait_for_connection:
+        timeout: 600
+
+    - name: waiting for {{ inventory_hostname }} https port to be reachable
+      local_action:
+        wait_for host="{{ inventory_hostname }}" port=443 delay=10 timeout=300
+
+    - name: Polling BIGIP to ensure in a READY state
+      uri:
+        url: "https://{{ ansible_host }}//mgmt/tm/sys/db/failover.linksup"
+        status_code: 200
+        timeout: 300
+        user: "{{ f5_user }}"
+        password: "{{f5_password}}"
+        validate_certs: no
+        return_content: yes
+      until: bigip_failover_linksup.status == 200 and bigip_failover_linksup.json.value == 'true'
+      retries: 20
+      delay: 20
+      register: bigip_failover_linksup
+    
+    - name: Waiting {{ inventory_hostname }} to join the vnf device group. URI
+      uri:
+        url: "https://{{ ansible_host }}//mgmt//tm/cm/device-group/vnf"
+        status_code: 200
+        timeout: 300
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        validate_certs: no
+        return_content: yes
+      until: vnf_device_group.status == 200 and vnf_device_group.json.name == 'vnf'
+      retries: 20
+      delay: 20
+      register: vnf_device_group
+
+    - name: Waiting {{ inventory_hostname }} the vnf device group to be in sync
+      bigip_facts:
+        server: "{{ ansible_host }}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        include: "device_group"
+        validate_certs: false
+      until: device_group["/Common/vnf"]["sync_status"]["color"] == 'COLOR_GREEN'
+      retries: 20
+      delay: 20
+
+
+
+############################################################
+# Play 3 - Configuring the VNF to insert the new slice
+#############################################################
+
+
+- name: Adding traffic to the VNF Slice 
+  hosts: localhost
+
+  tasks:
+    
+    - name: Add vnf node
+      bigip_node:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "present"
+        partition: "scaleout"
+        name: "{{ instance_name }}"
+        host: "{{ vm_ip }}"
+        validate_certs: "false"
+      delegate_to: localhost
+
+
+    - name: Add vnf to scaleout pool member
+      bigip_pool_member:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "present"
+        pool: "vnf"
+        partition: "scaleout"
+        name: "{{ instance_name }}"
+        host: "{{ vm_ip }}"
+        port: 0
+        validate_certs: "false"
+      delegate_to: localhost
+
+    - name: Adding Big-IP Monitor
+      uri:
+        method: POST
+        url: "https://{{ vnf_ip }}/mgmt//tm/ltm/monitor/gateway-icmp"
+        return_content: yes
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          name: "mon-{{ instance_name }}"
+          partition: "dag-out"
+          destination: "{{ return_ip }}:*"
+      delegate_to: localhost
+
+    - name: Adding Pool member, Using uri as native module doesn't support monitors
+      uri:
+        method: POST
+        url: "https://{{ vnf_ip }}/mgmt/tm/ltm/pool/~dag-out~vnf-out/members"
+        return_content: yes
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          name: "/dag-out/{{ instance_name }}:0"
+          address: "{{ vm_ip }}"
+          monitor: "mon-{{ instance_name }}"
+      delegate_to: localhost
+
+    - name: Adding Route pointing to pool member
+      uri:
+        method: POST
+        url: "https://{{ vnf_ip }}/mgmt/tm/net/route"
+        return_content: yes
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          name: "{{ instance_name }}"
+          partition: dag-out
+          gw: "{{return_ip}}"
+          network: "{{ vm_ip }}/32"
+      delegate_to: localhost
+
+    # - name: Adding Route pointing to pool member
+    #   bigip_static_route:
+    #     destination: "{{ vm_ip }}/32"
+    #     state: present
+    #     name: "{{ inst_name }}"
+    #     partition: dag-out
+    #     user: "admin"
+    #     password: "admin"
+    #     gateway_address: "{{return_ip}}"        
