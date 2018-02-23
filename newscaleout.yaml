@@ -49,6 +49,7 @@
       add_host:
           name: "{{ mgmt_ip }}"
           group: deployed-ve
+      debug: var=instance_name
 
 ############################################################
 # Play 2 - Wait for BIGIP VE instance to fully boot up

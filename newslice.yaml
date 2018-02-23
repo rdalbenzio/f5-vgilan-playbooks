@@ -48,7 +48,7 @@
     - set_fact: return_ip="{{ bigipve["stack"]["outputs"][12]["output_value"] }}"
     - set_fact: instance_name="{{ inst_name }}"
 
-    - name: Adding VM to deployed-ves
+    - name: Adding {{instance_name}} to deployed-ves
       add_host:
           name: "{{ mgmt_ip }}"
           group: deployed-ve
