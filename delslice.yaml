@@ -169,7 +169,7 @@
         method: POST
         url: "https://{{ vnf_ip }}/mgmt/tm/cm/remove-from-trust/"
         return_content: yes
-        status_code: 202,400
+        status_code: 200,202,400
         body_format: "json"
         user: "{{f5_user}}"
         password: "{{f5_password}}"

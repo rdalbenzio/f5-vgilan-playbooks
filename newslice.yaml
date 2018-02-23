@@ -9,7 +9,8 @@
   connection: local
 
   vars:
-    inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
+    random_number: "{{ 1000 | random }}"
+    inst_name: "{{ vnf }}-SLICE{{random_number}}"
 
   tasks:
 
@@ -203,3 +204,16 @@
     #     user: "admin"
     #     password: "admin"
     #     gateway_address: "{{return_ip}}"        
+
+############################################################
+# Play 4 - Show Slice Hostname
+#############################################################
+
+- name: Slice Deployed 
+  hosts: openstack
+  connection: local
+  
+  tasks:
+    
+    - name: Add vnf node
+      debug: var=instance_name
