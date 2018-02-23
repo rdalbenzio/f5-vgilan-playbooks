@@ -422,7 +422,8 @@ resources:
                   --license-pool-name ${BIGIQ_LICENSE_POOL_NAME} \
                   --big-ip-mgmt-address ${BIGIP_MGMT_ADDRESS} \
                   --ping www.f5.com 30 15 \
-                  --global-setting mgmt-dhcp:disabled
+                  --global-setting mgmt-dhcp:disabled \
+                  --module pem:nominal
 
 
 
