@@ -1,0 +1,132 @@
+#!/usr/bin/env ansible-playbook
+---
+
+##################################################
+# Play 1 - Deploy BIGIP VE Scaleout Stack in Heat
+##################################################
+- name: Deploy F5 BIGIP Scaleout instance
+  hosts: openstack
+  connection: local
+
+  vars:
+    inst_name: "{{ vnf }}-LBS{{ lbs_number}}"
+
+  tasks:
+    - name: Getting VNF Management address
+      os_server_facts:
+        server: "{{ vnf }}"
+      connection: local
+    - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+    
+    - name: Spinning up a new slice
+      os_stack:
+       state: present
+       name: "{{ inst_name }}"
+       template: "./files/openstack/f5_scaleout.yaml"
+       environment:
+        - ./files/openstack/testscaleoutHA.yaml
+       parameters:
+        ve_name: "{{ inst_name }}"
+        cluster_peer_address: "{{vnf_ip}}"
+      register: bigipve
+   
+    - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][6]["output_value"] }}"
+    - set_fact: vm_ip="{{ bigipve["stack"]["outputs"][20]["output_value"] }}"
+    - set_fact: instance_name="{{ inst_name }}"
+
+    - name: Adding VM to deployed-ves
+      add_host:
+          name: "{{ mgmt_ip }}"
+          group: deployed-ve
+
+############################################################
+# Play 2 - Wait for BIGIP VE instance to fully boot up
+#############################################################
+- name: waiting for target before continue
+  hosts: deployed-ve
+  connection: local
+
+  tasks:
+    - name: waiting for {{ inventory_hostname }} to be reachable via ping
+      wait_for_connection:
+        timeout: 600
+
+    - name: waiting for {{ inventory_hostname }} https port to be reachable
+      local_action:
+        wait_for host="{{ inventory_hostname }}" port=443 delay=10 timeout=300
+
+    - name: Polling BIGIP to ensure in a READY state
+      uri:
+        url: "https://{{ ansible_host }}//mgmt/tm/sys/db/failover.linksup"
+        status_code: 200
+        timeout: 300
+        user: "{{ f5_user }}"
+        password: "{{f5_password}}"
+        validate_certs: no
+        return_content: yes
+      until: bigip_failover_linksup.status == 200 and bigip_failover_linksup.json.value == 'true'
+      retries: 20
+      delay: 20
+      register: bigip_failover_linksup
+    
+    - name: Waiting {{ inventory_hostname }} to join the scaleout device group. URI
+      uri:
+        url: "https://{{ ansible_host }}//mgmt//tm/cm/device-group/scaleout"
+        status_code: 200
+        timeout: 300
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        validate_certs: no
+        return_content: yes
+      until: vnf_device_group.status == 200 and vnf_device_group.json.name == 'scaleout'
+      retries: 20
+      delay: 20
+      register: vnf_device_group
+
+    - name: Waiting {{ inventory_hostname }} the scaleout device group to be in sync
+      bigip_facts:
+        server: "{{ ansible_host }}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        include: "device_group"
+        validate_certs: false
+      until: device_group["/Common/scaleout"]["sync_status"]["color"] == 'COLOR_GREEN'
+      retries: 20
+      delay: 20
+
+
+
+############################################################
+# Play 3 - Configuring the VNF to insert the new lscaleout
+#############################################################
+
+
+- name: Adding traffic to the VNF Slice 
+  hosts: openstack
+  connection: local
+
+  tasks:
+    
+    - name: Add lbsout node
+      bigip_node:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "present"
+        partition: "vnf"
+        name: "{{ instance_name }}"
+        host: "{{ vm_ip }}"
+        validate_certs: "false"
+
+    - name: Add lbs to return pool member
+      bigip_pool_member:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "present"
+        pool: "lbsout"
+        partition: "vnf"
+        name: "{{ instance_name }}"
+        host: "{{ vm_ip }}"
+        port: 0
+        validate_certs: "false"

@@ -12,16 +12,28 @@
     inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
 
   tasks:
+
+    - name: Openstack Auth
+      set_fact:
+        os_auth:
+          auth_url: "{{ openstack.auth_url }}"
+          username: "{{ openstack.username }}"
+          password: "{{ openstack.password }}"
+          project_name: "{{ openstack.tenant_name }}"
+
     - name: Getting VNF Management address
       os_server_facts:
         server: "{{ vnf }}"
+        auth: "{{ os_auth }}"
       connection: local
+
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
     
     - name: Spinning up a new slice
       os_stack:
        state: present
        name: "{{ inst_name }}"
+       auth: "{{ os_auth }}"
        template: "./files/openstack/f5_vnf.yaml"
        environment:
         - ./files/openstack/testHA.yaml
