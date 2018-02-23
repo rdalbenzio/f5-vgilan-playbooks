@@ -9,10 +9,13 @@
   connection: local
 
   vars:
-    random_number: "{{ 1000 | random }}"
-    inst_name: "{{ vnf }}-SLICE{{random_number}}"
+    #random_number: "{{ 1000 | random }}"
+    #inst_name: "{{ vnf }}-SLICE{{random_number}}"
 
   tasks:
+    - set_fact:
+         instance_name: "{{ vnf }}-SLICE{{ 1000 | random }}"
+      run_once: yes
 
     - name: Openstack Auth
       set_fact:
@@ -33,20 +36,20 @@
     - name: Spinning up a new slice
       os_stack:
        state: present
-       name: "{{ inst_name }}"
+       name: "{{ instance_name }}"
        auth: "{{ os_auth }}"
        template: "./files/openstack/f5_vnf.yaml"
        environment:
         - ./files/openstack/testHA.yaml
        parameters:
-        ve_name: "{{ inst_name }}"
+        ve_name: "{{ instance_name }}"
         cluster_peer_address: "{{vnf_ip}}"
       register: bigipve
    
     - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][8]["output_value"] }}"
     - set_fact: vm_ip="{{ bigipve["stack"]["outputs"][22]["output_value"] }}"
     - set_fact: return_ip="{{ bigipve["stack"]["outputs"][12]["output_value"] }}"
-    - set_fact: instance_name="{{ inst_name }}"
+    #- set_fact: instance_name= "{{ inst_name }}"
 
     - name: Adding {{instance_name}} to deployed-ves
       add_host:
