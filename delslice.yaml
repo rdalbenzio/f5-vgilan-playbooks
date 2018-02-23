@@ -14,15 +14,25 @@
     inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
 
   tasks:
+    - name: Openstack Auth
+      set_fact:
+        os_auth:
+          auth_url: "{{ openstack.auth_url }}"
+          username: "{{ openstack.username }}"
+          password: "{{ openstack.password }}"
+          project_name: "{{ openstack.tenant_name }}"
+
     - name: Getting VNF Management address
       os_server_facts:
         server: "{{ vnf }}"
+        auth: "{{ os_auth }}"
       connection: local
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
 
     - name: Getting SLICE Management address
       os_server_facts:
         server: "{{ inst_name }}"
+        auth: "{{ os_auth }}"
       connection: local
     - set_fact: slice_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
 
@@ -179,7 +189,17 @@
   connection: local
   
   tasks: 
+    - name: Openstack Auth
+      set_fact:
+        os_auth:
+          auth_url: "{{ openstack.auth_url }}"
+          username: "{{ openstack.username }}"
+          password: "{{ openstack.password }}"
+          project_name: "{{ openstack.tenant_name }}"
+         
     - name: Delete from Openstack slice
       os_stack:
        state: absent
        name: "{{ inst_name }}"
+       auth: "{{ os_auth }}"
+
