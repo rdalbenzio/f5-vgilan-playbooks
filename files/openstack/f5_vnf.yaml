@@ -483,6 +483,7 @@ resources:
                   --remote-host ${CLUSTER_PEER_ADDRESS} \
                   --remote-user ${BIGIP_ADMIN_USERNAME} \
                   --remote-password ${BIGIP_ADMIN_PASSWORD} \
+                  --background
 
             ############ BEGIN USER CUSTOMIZE SECTION IN WRITE_FILES: ############
 
@@ -581,7 +582,7 @@ resources:
                   # Module provisioning fix including cgnat to be checked with a variable ########
                   #tmsh modify sys provision ${F5_MODULE} { level nominal }
                   tmsh modify sys feature-module cgnat enabled
-                  tmsh create ltm lsn-pool LSNPool
+                  #tmsh create ltm lsn-pool LSNPool
 
                   ##### BEGIN HIGH LEVEL CONFIG ########
 
