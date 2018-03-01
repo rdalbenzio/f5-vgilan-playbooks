@@ -9,8 +9,7 @@
   connection: local
 
   vars:
-    #random_number: "{{ 1000 | random }}"
-    #inst_name: "{{ vnf }}-SLICE{{random_number}}"
+    #inst_name: "{{ vnf }}-SLICE{{ slice_number}}"
 
   tasks:
     - set_fact:
@@ -32,7 +31,7 @@
       connection: local
 
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
-    
+
     - name: Spinning up a new slice
       os_stack:
        state: present
@@ -45,7 +44,7 @@
         ve_name: "{{ instance_name }}"
         cluster_peer_address: "{{vnf_ip}}"
       register: bigipve
-   
+
     - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][8]["output_value"] }}"
     - set_fact: vm_ip="{{ bigipve["stack"]["outputs"][22]["output_value"] }}"
     - set_fact: return_ip="{{ bigipve["stack"]["outputs"][12]["output_value"] }}"
@@ -85,7 +84,7 @@
       retries: 20
       delay: 20
       register: bigip_failover_linksup
-    
+
     - name: Waiting {{ inventory_hostname }} to join the vnf device group. URI
       uri:
         url: "https://{{ ansible_host }}//mgmt//tm/cm/device-group/vnf"
@@ -118,12 +117,12 @@
 #############################################################
 
 
-- name: Adding traffic to the VNF Slice 
+- name: Adding traffic to the VNF Slice
   hosts: openstack
   connection: local
 
   tasks:
-    
+
     - name: Add vnf node
       bigip_node:
         server: "{{vnf_ip}}"
@@ -206,17 +205,17 @@
     #     partition: dag-out
     #     user: "admin"
     #     password: "admin"
-    #     gateway_address: "{{return_ip}}"        
+    #     gateway_address: "{{return_ip}}"
 
 ############################################################
 # Play 4 - Show Slice Hostname
 #############################################################
 
-- name: Slice Deployed 
+- name: Slice Deployed
   hosts: openstack
   connection: local
-  
+
   tasks:
-    
+
     - name: Add vnf node
       debug: var=instance_name

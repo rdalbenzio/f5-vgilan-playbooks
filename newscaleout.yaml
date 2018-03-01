@@ -28,7 +28,8 @@
       os_server_facts:
         server: "{{ vnf }}"
         auth: "{{ os_auth }}"
-        connection: local
+      connection: local
+
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
 
     - name: Spinning up a new slice
