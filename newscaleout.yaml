@@ -13,7 +13,7 @@
 
   tasks:
     - set_fact:
-         instance_name: "{{ vnf }}-SLICE{{ 1000 | random }}"
+         instance_name: "{{ vnf }}-LBS{{ 1000 | random }}"
       run_once: yes
 
     - name: Openstack Auth
