@@ -1,0 +1,196 @@
+#!/usr/bin/env ansible-playbook
+---
+
+# echo s1 $1
+# echo vnfname is $vnfname
+#
+# cluster_ip=(`heat output-show $1 mgmt_ip`)
+# floating_ip=(`heat output-show $1 mgmt_floating_ip`)
+# vnf_ip=(`heat output-show $vnfname mgmt_ip`)
+#
+# echo cluster ip is $cluster_ip
+# echo floating is $floating_ip
+#
+# heat stack-delete --yes "$vnfname"
+#
+# curl1="curl -sk -u admin:admin -X DELETE -H \"Content-type: application/json\"  https://$floating_ip/mgmt/tm/ltm/pool/~vnf~lbsout/members/$vnfname:0"
+# curl2="curl -sk -u admin:admin -X DELETE -H \"Content-type: application/json\"  https://$floating_ip/mgmt/tm/ltm/node/~vnf~$vnfname"
+# echo $curl1
+# echo $curl2
+# $curl1
+# $curl2
+#
+# #revoke license
+# token=`curl -sk -u admin:f54dministrator -X POST -H "Content-type: application/json" -d '{"username": "admin", "password": "f54dministrator"}' https://10.102.123.203/mgmt/
+# shared/authn/login | sed -e 's/[{}]/''/g' |      awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | grep "\"token\":\"token\"" | tr ":" "\n" | grep -
+# v "token"`
+# temp="${token%\"}"
+# token="${temp#\"}"
+#
+# curl -sk -X POST -H "X-F5-Auth-Token: $token" -H "Content-type: application/json" -d '{"licensePoolName": "LBSPool", "command": "revoke", "address": "'$vnf_ip'", "user": "
+# admin", "password": "admin"}' https://10.102.123.203/mgmt/cm/device/tasks/licensing/pool/member-management | python -m json.tool
+#
+# #remove from the cluster
+#
+# curl -sk -u admin:admin -X DELETE https://$floating_ip/mgmt/tm/cm/device-group/scaleout/devices/$vnfname.openstack.lab
+# curl -sk -u admin:admin -X POST -H "Content-type: application/json" -d '{"deviceName":"'$vnfname'.openstack.lab", "command":"run"}'  https://$floating_ip/mgmt/tm/cm/remove
+# -from-trust/
+
+
+############################################################
+# Play 1 - Removing LBS from Traffic
+#############################################################
+
+
+- name: Removing the LBS from the POOL of the VEs
+  hosts: openstack
+  connection: local
+
+  vars:
+    inst_name: "{{ vnf }}-LBS{{ slice_number}}"
+
+  tasks:
+    - name: Openstack Auth
+      set_fact:
+        os_auth:
+          auth_url: "{{ openstack.auth_url }}"
+          username: "{{ openstack.username }}"
+          password: "{{ openstack.password }}"
+          project_name: "{{ openstack.tenant_name }}"
+
+    - name: Getting VNF Management address
+      os_server_facts:
+        server: "{{ vnf }}"
+        auth: "{{ os_auth }}"
+      connection: local
+    - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+
+    - name: Getting LBS Management address
+      os_server_facts:
+        server: "{{ inst_name }}"
+        auth: "{{ os_auth }}"
+      connection: local
+    - set_fact: slice_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
+
+    - set_fact: inst_name={{ inst_name }}
+
+    - name: Remove lbas from lbsout pool
+      bigip_pool_member:
+        server: "{{vnf_ip}}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
+        state: "absent"
+        preserve_node: no
+        pool: "lbsout"
+        partition: "vnf"
+        name: "{{ inst_name }}"
+        port: 0
+        validate_certs: "false"
+
+############################################################
+# Play 2 - Revoking License
+#############################################################
+
+- name: Revoking License
+  hosts: openstack
+  connection: local
+
+  tasks:
+
+    - name: Get BIGIQ Auth Token
+      uri:
+        method: POST
+        url: "https://{{ bigiq_ip }}/mgmt/shared/authn/login"
+        return_content: yes
+        status_code: 200
+        body_format: "json"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          username: "admin"
+          password: "{{ bigiq_password }}"
+          loginProviderName: "local"
+      register: tokenpage
+
+    - name: Revoke SLICE license
+      uri:
+        method: POST
+        url: "https://{{ bigiq_ip }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        return_content: yes
+        status_code: 202
+        body_format: "json"
+        headers:
+          Content-Type: "application/json"
+          X-F5-Auth-Token: "{{tokenpage.json.token.token}}"
+        validate_certs: "false"
+        body:
+          licensePoolName: "{{lbslicensePoolName}}"
+          command: revoke
+          address: "{{ slice_ip}}"
+          user: "{{f5_user}}"
+          password: "{{f5_password}}"
+
+############################################################
+# Play 3 - Removing Slice From the Cluster
+#############################################################
+
+- name: Removing LBS From the Cluster
+  hosts: openstack
+  connection: local
+
+  tasks:
+
+    - name: Remove the Slice from the device group vnf
+      uri:
+        method: DELETE
+        url: "https://{{ vnf_ip }}/mgmt/tm/cm/device-group/scaleout/devices/{{ inst_name }}.{{ vnfdomain }}"
+        return_content: yes
+        status_code: 200,404
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        body:
+          test: "value"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+
+    - name: Remove SLICE From Trust Group
+      uri:
+        method: POST
+        url: "https://{{ vnf_ip }}/mgmt/tm/cm/remove-from-trust/"
+        return_content: yes
+        status_code: 200,202,400
+        body_format: "json"
+        user: "{{f5_user}}"
+        password: "{{f5_password}}"
+        headers:
+          Content-Type: "application/json"
+        validate_certs: "false"
+        body:
+          deviceName: "{{ inst_name }}.{{ vnfdomain }}"
+          command: run
+
+############################################################
+# Play 4 - Delete Slice From Openstack
+#############################################################
+
+- name: Delete LBS From Openstack
+  hosts: openstack
+  connection: local
+
+  tasks:
+    - name: Openstack Auth
+      set_fact:
+        os_auth:
+          auth_url: "{{ openstack.auth_url }}"
+          username: "{{ openstack.username }}"
+          password: "{{ openstack.password }}"
+          project_name: "{{ openstack.tenant_name }}"
+
+    - name: Delete from Openstack slice
+      os_stack:
+       state: absent
+       name: "{{ inst_name }}"
+       auth: "{{ os_auth }}"

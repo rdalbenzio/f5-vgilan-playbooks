@@ -8,7 +8,7 @@ openstack:
 
 vnfdomain: openstack.lab
 
-vnf: 
+vnf:
   name: CTRLPLANE1
   username: admin
   password: admin
@@ -21,3 +21,4 @@ bigiq_ip: 10.103.14.209
 bigiq_user: admin
 bigiq_password: f54dministrator
 licensePoolName: VNFPool
+lbslicensePoolName: LBSPool
