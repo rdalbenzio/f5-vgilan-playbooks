@@ -9,9 +9,12 @@
   connection: local
 
   vars:
-    inst_name: "{{ vnf }}-LBS{{ lbs_number}}"
+    #inst_name: "{{ vnf }}-LBS{{ lbs_number}}"
 
   tasks:
+    - set_fact:
+         instance_name: "{{ vnf }}-SLICE{{ 1000 | random }}"
+      run_once: yes
 
     - name: Openstack Auth
       set_fact:
@@ -27,25 +30,25 @@
         auth: "{{ os_auth }}"
         connection: local
     - set_fact: vnf_ip="{{ openstack_servers[0].addresses.int_mgmt[0].addr }}"
-    
+
     - name: Spinning up a new slice
       os_stack:
        state: present
-       name: "{{ inst_name }}"
+       name: "{{ instance_name }}"
        auth: "{{ os_auth }}"
        template: "./files/openstack/f5_scaleout.yaml"
        environment:
         - ./files/openstack/testscaleoutHA.yaml
        parameters:
-        ve_name: "{{ inst_name }}"
+        ve_name: "{{ instance_name }}"
         cluster_peer_address: "{{vnf_ip}}"
       register: bigipve
-   
+
     - set_fact: mgmt_ip="{{ bigipve["stack"]["outputs"][6]["output_value"] }}"
     - set_fact: vm_ip="{{ bigipve["stack"]["outputs"][20]["output_value"] }}"
-    - set_fact: instance_name="{{ inst_name }}"
+    #- set_fact: instance_name="{{ inst_name }}"
 
-    - name: Adding VM to deployed-ves
+    - name: Adding {{instance_name}} to deployed-ves
       add_host:
           name: "{{ mgmt_ip }}"
           group: deployed-ve
@@ -80,7 +83,7 @@
       retries: 20
       delay: 20
       register: bigip_failover_linksup
-    
+
     - name: Waiting {{ inventory_hostname }} to join the scaleout device group. URI
       uri:
         url: "https://{{ ansible_host }}//mgmt//tm/cm/device-group/scaleout"
@@ -113,12 +116,12 @@
 #############################################################
 
 
-- name: Adding traffic to the VNF Slice 
+- name: Adding traffic to the VNF Slice
   hosts: openstack
   connection: local
 
   tasks:
-    
+
     - name: Add lbsout node
       bigip_node:
         server: "{{vnf_ip}}"
@@ -142,3 +145,16 @@
         host: "{{ vm_ip }}"
         port: 0
         validate_certs: "false"
+
+############################################################
+# Play 4 - Show Slice Hostname
+#############################################################
+
+- name: Scaleout Instance Deployed
+  hosts: openstack
+  connection: local
+
+  tasks:
+    
+    - name: Add vnf node
+      debug: var=instance_name
