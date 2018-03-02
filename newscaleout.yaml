@@ -39,7 +39,7 @@
        auth: "{{ os_auth }}"
        template: "./files/openstack/f5_scaleout.yaml"
        environment:
-        - ./files/openstack/testscaleoutHA.yaml
+        - ./files/openstack/scaleoutparameters.yaml
        parameters:
         ve_name: "{{ instance_name }}"
         cluster_peer_address: "{{vnf_ip}}"

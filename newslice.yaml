@@ -39,7 +39,7 @@
        auth: "{{ os_auth }}"
        template: "./files/openstack/f5_vnf.yaml"
        environment:
-        - ./files/openstack/testHA.yaml
+        - ./files/openstack/vnfparameters.yaml
        parameters:
         ve_name: "{{ instance_name }}"
         cluster_peer_address: "{{vnf_ip}}"
